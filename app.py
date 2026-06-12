@@ -69,33 +69,9 @@ if inventory_file and restock_file:
     # Copyable: just the quantity column, one number per line (matches inventory row order)
     copyable = "\n".join(str(r["加库存数量"]) for r in result_rows)
 
-    st.subheader("📋 可直接复制粘贴的数量列")
-
-    import json
-    escaped = json.dumps(copyable)
-    st.components.v1.html(
-        f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="font-size:13px; color:#888;">粘贴进库存表对应列即可</span>
-            <button onclick="
-                navigator.clipboard.writeText({escaped}).then(() => {{
-                    this.innerText = '✅ 已复制';
-                    setTimeout(() => this.innerText = '📋 复制全列', 1500);
-                }});
-            " style="
-                padding: 5px 14px;
-                font-size: 13px;
-                cursor: pointer;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                background: #fff;
-            ">📋 复制全列</button>
-        </div>
-        """,
-        height=44,
-    )
-
-    st.text_area("", value=copyable, height=300, label_visibility="collapsed")
+    st.subheader("一键复制 New Stock")
+    st.caption("点右上角复制图标，粘贴进库存表对应列即可")
+    st.code(copyable, language=None)
 
     # --- Check 1: SKUs in restock but not in inventory ---
     extra_skus = restock_sku_set - inventory_sku_set
