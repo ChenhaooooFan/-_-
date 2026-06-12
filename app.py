@@ -9,9 +9,11 @@ restock_file = st.file_uploader("上传加库存 CSV", type="csv", key="restock"
 if inventory_file and restock_file:
     # --- Read inventory file ---
     inv_df = pd.read_csv(inventory_file)
+    # SKU编码 format: NPJ005-S / NPJ005-M / NPJ005-L
     inv_df["base_SKU"] = inv_df["SKU编码"].str.replace(r"-(S|M|L)$", "", regex=True)
+    inv_df["size"] = inv_df["SKU编码"].str.extract(r"-(S|M|L)$")
 
-    # Build SKU -> name map from inventory (use first non-empty 产品名称 per base SKU)
+    # Build SKU -> name map from inventory
     inv_name_map = {}
     for _, row in inv_df.iterrows():
         sku = row["base_SKU"]
@@ -19,7 +21,7 @@ if inventory_file and restock_file:
         if sku not in inv_name_map and pd.notna(name) and str(name).strip():
             inv_name_map[sku] = str(name).strip()
 
-    ordered_skus = list(dict.fromkeys(inv_df["base_SKU"].dropna()))
+    inventory_sku_set = set(inv_df["base_SKU"].dropna())
 
     # --- Read restock file ---
     restock_df = pd.read_csv(restock_file)
@@ -29,27 +31,29 @@ if inventory_file and restock_file:
         restock_df.drop_duplicates("SKU").set_index("SKU")["英文名称"].to_dict()
     )
 
-    # Aggregate S/M/L per SKU
+    # Aggregate S/M/L per base SKU (handles duplicate rows)
     restock_agg = (
         restock_df.groupby("SKU", as_index=False)[["S数量", "M数量", "L数量"]].sum()
     )
     restock_map = restock_agg.set_index("SKU")[["S数量", "M数量", "L数量"]].to_dict("index")
-
-    inventory_sku_set = set(ordered_skus)
     restock_sku_set = set(restock_map.keys())
 
-    # --- Build result table ---
-    rows = []
-    for sku in ordered_skus:
-        if sku in restock_map:
-            s = int(restock_map[sku]["S数量"])
-            m = int(restock_map[sku]["M数量"])
-            l = int(restock_map[sku]["L数量"])
-        else:
-            s, m, l = 0, 0, 0
-        rows.append({"SKU": sku, "S数量": s, "M数量": m, "L数量": l})
+    size_col = {"S": "S数量", "M": "M数量", "L": "L数量"}
 
-    result_df = pd.DataFrame(rows)
+    # --- Build result: one row per SKU-size line, matching inventory layout ---
+    result_rows = []
+    for _, inv_row in inv_df.iterrows():
+        base = inv_row["base_SKU"]
+        size = inv_row["size"]
+        if pd.isna(size):
+            continue
+        if base in restock_map:
+            qty = int(restock_map[base][size_col[size]])
+        else:
+            qty = 0
+        result_rows.append({"SKU编码": inv_row["SKU编码"], "加库存数量": qty})
+
+    result_df = pd.DataFrame(result_rows)
 
     st.subheader("整理结果（按库存表顺序）")
     st.dataframe(result_df, use_container_width=True, hide_index=True)
@@ -61,6 +65,12 @@ if inventory_file and restock_file:
         file_name="加库存整理结果.csv",
         mime="text/csv",
     )
+
+    # Copyable: just the quantity column, one number per line (matches inventory row order)
+    copyable = "\n".join(str(r["加库存数量"]) for r in result_rows)
+    st.subheader("📋 可直接复制粘贴的数量列")
+    st.caption("全选复制后，直接粘贴进库存表对应列即可")
+    st.text_area("", value=copyable, height=300, label_visibility="collapsed")
 
     # --- Check 1: SKUs in restock but not in inventory ---
     extra_skus = restock_sku_set - inventory_sku_set
